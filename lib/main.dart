@@ -107,14 +107,20 @@ class _MyHomePageState extends State<MyHomePage> {
 /// current animation value and uses the shader to configure the Paint
 /// object that draws a rectangle onto the canvas.
 class AnimatedShaderPainter extends CustomPainter {
-  AnimatedShaderPainter(this.shader, this.animation) : super(repaint: animation);
+  AnimatedShaderPainter(this.shader, this.animation, this.image) : super(repaint: animation);
 
   final ui.FragmentShader shader;
+  final ui.Image? image;
   final Animation<double> animation;
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (image == null) {
+      return;
+    }
+
     shader.setFloat(0, animation.value);
+    shader.setSampler(0, ImageShader(image!, TileMode.clamp, TileMode.clamp, Matrix4.identity().storage));
     canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
   }
 
@@ -144,6 +150,9 @@ class AnimatedShaderState extends State<AnimatedShader>
   late AnimationController _controller;
   late final ui.FragmentShader _shader;
 
+  ImageStream? _imageStream;
+  ImageInfo? _imageInfo;
+
   @override
   void initState() {
     super.initState();
@@ -171,6 +180,34 @@ class AnimatedShaderState extends State<AnimatedShader>
       }
     })
     ..forward();
+
+    Future.delayed(Duration.zero, () {
+      _getImage();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _getImage();
+  }
+
+  void _getImage() {
+    final ImageStream? oldImageStream = _imageStream;
+    _imageStream = const NetworkImage('https://www.w3.org/TR/compositing-1/examples/ducky.png').resolve(createLocalImageConfiguration(context));
+
+    if (_imageStream!.key != oldImageStream?.key) {
+      final ImageStreamListener listener = ImageStreamListener(_updateImage);
+      oldImageStream?.removeListener(listener);
+      _imageStream!.addListener(listener);
+    }
+  }
+
+  void _updateImage(ImageInfo image, bool synchronousCall) {
+    setState(() {
+      _imageInfo?.dispose();
+      _imageInfo = image;
+    });
   }
 
   @override
@@ -181,6 +218,9 @@ class AnimatedShaderState extends State<AnimatedShader>
 
   @override
   void dispose() {
+    _imageStream?.removeListener(ImageStreamListener(_updateImage));
+    _imageInfo?.dispose();
+
     _controller.dispose();
     _shader.dispose();
     super.dispose();
@@ -189,7 +229,7 @@ class AnimatedShaderState extends State<AnimatedShader>
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: AnimatedShaderPainter(_shader, _controller),
+      painter: AnimatedShaderPainter(_shader, _controller, _imageInfo?.image),
       size: widget.size,
     );
   }
